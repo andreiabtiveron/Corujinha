@@ -1,3 +1,4 @@
+# força um alerta
 import time
 import requests
 import random
@@ -27,7 +28,7 @@ def security_web():
     return {
         "traffic_anomaly": random.choice([0, 0, 0, 1]),
         "auth_failures": random.randint(0, 20),
-        "config_change": random.choice([0, 0, 1]),
+        "config_change_detected": random.choice([0, 0, 1]),
         "known_vulnerability": random.choice([0, 0, 0, 1]),
     }
 
@@ -35,7 +36,7 @@ def security_web():
 def security_db():
     return {
         "auth_failures": random.randint(0, 10),
-        "config_change": random.choice([0, 1]),
+        "config_change_detected": random.choice([0, 1]),
         "known_vulnerability": random.choice([0, 0, 1]),
         "slow_query_spike": random.randint(0, 15),
     }
@@ -44,7 +45,7 @@ def security_db():
 def security_dns():
     return {
         "traffic_anomaly": random.choice([0, 0, 1]),
-        "config_change": random.choice([0, 1]),
+        "config_change_detected": random.choice([0, 1]),
         "known_vulnerability": random.choice([0, 0, 1]),
     }
 
@@ -54,8 +55,6 @@ def security_smtp():
         "auth_failures": random.randint(0, 8),
         "queue_spike": random.randint(0, 20),
         "known_vulnerability": random.choice([0, 0, 1]),
-        "config_change": random.choice([0, 1]),
-
     }
 
 #coletores de metricas normais
@@ -138,6 +137,131 @@ def collect_smtp():
     sec = security_smtp()
     for name, value in sec.items():
         send_metric("smtp", name, float(value), "")
+
+
+def main():
+    print("Iniciando coletor…")
+    while True:
+        collect_web()
+        collect_db()
+        collect_dns()
+        collect_smtp()
+        print("---- ciclo completo ----\n")
+        time.sleep(30)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+import time
+import requests
+import random
+
+API_BASE = "http://127.0.0.1:8000"
+
+db_size_gb = 10.0
+
+
+def send_metric(service_key: str, metric_name: str, value: float, unit: str):
+    payload = {
+        "service_key": service_key,
+        "metric_name": metric_name,
+        "value": value,
+        "unit": unit,
+    }
+
+    try:
+        requests.post(f"{API_BASE}/metrics/ingest", json=payload, timeout=5)
+        print(f"[OK] {service_key} → {metric_name} = {value} {unit}")
+    except Exception as e:
+        print(f"[ERRO] Falha ao enviar métrica: {e}")
+
+
+#security metrics por serviço
+def security_web():
+    return {
+        "traffic_anomaly": random.choice([0, 0, 0, 1]),
+        "auth_failures": random.randint(0, 20),
+        "config_change_detected": random.choice([0, 0, 1]),
+        "known_vulnerability": random.choice([0, 0, 0, 1]),
+    }
+
+
+def security_db():
+    return {
+        "auth_failures": random.randint(0, 10),
+        "config_change_detected": random.choice([0, 1]),
+        "known_vulnerability": random.choice([0, 0, 1]),
+        "slow_query_spike": random.randint(0, 15),
+    }
+
+
+def security_dns():
+    return {
+        "traffic_anomaly": random.choice([0, 0, 1]),
+        "config_change_detected": random.choice([0, 1]),
+        "known_vulnerability": random.choice([0, 0, 1]),
+    }
+
+
+def security_smtp():
+    return {
+        "auth_failures": random.randint(0, 8),
+        "queue_spike": random.randint(0, 20),
+        "known_vulnerability": random.choice([0, 0, 1]),
+    }
+
+#coletores de metricas normais
+def collect_web():
+    # FORÇAR RED
+    latency = 3000       # > 2000 ms → RED
+    availability = 1
+    error_rate = 0.2     # > 0.10 → RED
+
+    send_metric("web", "latency_ms", latency, "ms")
+    send_metric("web", "availability", availability, "bool")
+    send_metric("web", "error_rate", error_rate, "ratio")
+    send_metric("web", "rps", 20, "req/s")
+
+    # segurança (opcional)
+    sec = security_web()
+    for name, value in sec.items():
+        send_metric("web", name, float(value), "")
+
+
+def collect_db():
+    # FORÇAR RED
+    send_metric("db", "availability", 1, "bool")
+    send_metric("db", "cpu_usage", 99, "%")             # > 90% → RED
+    send_metric("db", "slow_queries", 20, "count")      # > 10 → RED
+    send_metric("db", "rollback_rate", 0.05, "ratio")   # > 0.03 → RED
+    send_metric("db", "open_connections", 300, "")      # > 250 → RED
+    send_metric("db", "disk_latency_ms", 30, "ms")      # > 20 → RED
+    send_metric("db", "memory_mb", 3800, "MB")          # > 3500 → RED
+
+
+def collect_dns():
+    send_metric("dns", "latency_ms", 200, "ms")  # > 150 → RED
+    send_metric("dns", "failures", 2, "count")   # > 0.05 ratio → RED
+
+
+def collect_smtp():
+    send_metric("smtp", "queue_length", 40, "emails")  # > 30 → RED
+    send_metric("smtp", "errors", 10, "count")         # > 5 → RED
+    send_metric("smtp", "throughput", 0, "emails/min") # < 1 → RED
+
 
 
 def main():

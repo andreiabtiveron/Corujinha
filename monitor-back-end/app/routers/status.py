@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from .. import models
+from ..email_sender import send_alert_email
 
 router = APIRouter(prefix="/status", tags=["Status"])
 
@@ -12,6 +13,7 @@ def get_db():
     finally:
         db.close()
 
+# pega últimas métricas do serviço
 def get_latest_metrics(db: Session, service_id: int):
     metrics = (
         db.query(models.Metric)
@@ -27,6 +29,7 @@ def get_latest_metrics(db: Session, service_id: int):
 
     return latest
 
+# Último alerta do serviço
 def get_last_alert(db: Session, service_id: int):
     return (
         db.query(models.Alert)
@@ -35,6 +38,119 @@ def get_last_alert(db: Session, service_id: int):
         .first()
     )
 
+
+# Regras de alerta por serviço
+# db
+def evaluate_db_status(metrics):
+    cpu = metrics.get("cpu_usage", 0)
+    mem = metrics.get("memory_mb", 0)
+    roll = metrics.get("rollback_rate", 0)
+    disk = metrics.get("disk_latency_ms", 0)
+    slow = metrics.get("slow_queries", 0)
+    conn = metrics.get("open_connections", 0)
+    avail = metrics.get("availability", 1)
+
+    # segurança extra
+    auth_fail = metrics.get("auth_failures", 0)
+    vuln = metrics.get("known_vulnerability", 0)
+    config_change = metrics.get("config_change", 0)
+
+    # vermelho
+    if (
+        avail == 0 or roll > 0.03 or cpu > 90 or mem > 3500 or
+        disk > 20 or slow > 10 or conn > 250 or
+        auth_fail > 5 or vuln == 1 or config_change == 1
+    ):
+        return "red", "Banco crítico: desempenho degradado ou problema de segurança detectado."
+
+    # amarelo
+    if (
+        0.01 <= roll <= 0.03 or
+        70 < cpu <= 90 or
+        2500 < mem <= 3500 or
+        10 < disk <= 20 or
+        5 < slow <= 10 or
+        150 < conn <= 250 or
+        auth_fail > 0
+    ):
+        return "yellow", "Banco apresenta degradação moderada."
+
+    return "green", None
+
+# web server
+def evaluate_web_status(metrics):
+    latency = metrics.get("latency_ms", 0)
+    error_rate = metrics.get("error_rate", 0)
+    availability = metrics.get("availability", 1)
+
+    # segurança
+    anomaly = metrics.get("traffic_anomaly", 0)
+    auth_fail = metrics.get("auth_failures", 0)
+    vuln = metrics.get("known_vulnerability", 0)
+    config_change = metrics.get("config_change", 0)
+
+    # vermelho
+    if availability == 0:
+        return "red", "Web server fora do ar."
+    if latency > 2000 or error_rate > 0.10:
+        return "red", "Web crítico: latência extremamente alta ou muitos erros."
+    if anomaly == 1 or vuln == 1 or config_change == 1:
+        return "red", "Ataque ou risco detectado: tráfego anômalo, vulnerabilidade ou mudança suspeita."
+
+    # amarelo
+    if latency > 1000 or error_rate > 0.02:
+        return "yellow", "Web degradado: latência alta ou taxa de erro acima do normal."
+    if auth_fail > 5:
+        return "yellow", "Falhas de autenticação acima do esperado."
+
+    return "green", None
+
+
+
+#dns
+def evaluate_dns_status(metrics):
+    latency = metrics.get("latency_ms", 0)
+    failures = metrics.get("failures", 0)
+
+    anomaly = metrics.get("traffic_anomaly", 0)
+    vuln = metrics.get("known_vulnerability", 0)
+    config_change = metrics.get("config_change", 0)
+
+    # vermelho
+    if latency > 150 or failures > 0.05 or anomaly == 1 or vuln == 1 or config_change == 1:
+        return "red", "DNS crítico: falhas, lentidão ou evento de segurança detectado."
+
+    # amarelo
+    if latency > 80 or failures > 0.01:
+        return "yellow", "DNS degradado: lentidão ou falhas acima do normal."
+
+    return "green", None
+
+# smtp
+def evaluate_smtp_status(metrics):
+    queue = metrics.get("queue_length", 0)
+    throughput = metrics.get("throughput", 1)
+    errors = metrics.get("errors", 0)
+
+    vuln = metrics.get("known_vulnerability", 0)
+    auth_fail = metrics.get("auth_failures", 0)
+    config_change = metrics.get("config_change", 0)
+
+    # vermelho
+    if (
+        errors > 5 or queue > 30 or throughput < 1 or
+        vuln == 1 or config_change == 1
+    ):
+        return "red", "SMTP crítico: fila alta, erros ou alerta de segurança."
+
+    # amarelo
+    if errors > 1 or queue > 10 or auth_fail > 0:
+        return "yellow", "SMTP degradado: erros moderados ou falhas de autenticação."
+
+    return "green", None
+
+
+#endpoint principal/status/{service}
 @router.get("/{service_key}")
 def service_status(service_key: str, db: Session = Depends(get_db)):
     service = db.query(models.Service).filter(models.Service.key == service_key).first()
@@ -43,32 +159,37 @@ def service_status(service_key: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Serviço não encontrado")
 
     metrics = get_latest_metrics(db, service.id)
-    alert = get_last_alert(db, service.id)
 
-    if alert:
-        if alert.level == 1:
-            status = "green"
-        elif alert.level == 2:
-            status = "yellow"
-        else:
-            status = "red"
+    # Seleciona avaliação correta
+    if service_key == "db":
+        status, msg = evaluate_db_status(metrics)
+    elif service_key == "web":
+        status, msg = evaluate_web_status(metrics)
+    elif service_key == "dns":
+        status, msg = evaluate_dns_status(metrics)
+    elif service_key == "smtp":
+        status, msg = evaluate_smtp_status(metrics)
     else:
-        status = "green"
+        status, msg = "green", None
+
+    # Preparar alerta
+    alert = (
+        {"level": 3 if status == "red" else 2 if status == "yellow" else 1,
+         "message": msg}
+        if msg else None
+    )
+
+    # Envio automático de alerta crítico
+    if status == "red" and msg:
+        send_alert_email(service.name, msg, status)
 
     return {
         "service": service.key,
         "name": service.name,
         "status": status,
         "metrics": metrics,
-        "last_alert": {
-            "level": alert.level,
-            "message": alert.message
-        } if alert else None
+        "last_alert": alert
     }
-
-# ================================================
-# DASHBOARD CONSOLIDADO
-# ================================================
 
 @router.get("/dashboard/all")
 def dashboard_view(db: Session = Depends(get_db)):
@@ -76,15 +197,16 @@ def dashboard_view(db: Session = Depends(get_db)):
     result = []
 
     for s in services:
-        alert = get_last_alert(db, s.id)
+        metrics = get_latest_metrics(db, s.id)
 
-        if alert:
-            if alert.level == 1:
-                status = "green"
-            elif alert.level == 2:
-                status = "yellow"
-            else:
-                status = "red"
+        if s.key == "db":
+            status, _ = evaluate_db_status(metrics)
+        elif s.key == "web":
+            status, _ = evaluate_web_status(metrics)
+        elif s.key == "dns":
+            status, _ = evaluate_dns_status(metrics)
+        elif s.key == "smtp":
+            status, _ = evaluate_smtp_status(metrics)
         else:
             status = "green"
 

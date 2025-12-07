@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
-from .. import models, schemas, alerts   
+from .. import models, schemas
 
 router = APIRouter(prefix="/metrics", tags=["Metrics"])
 
@@ -28,8 +28,6 @@ def ingest_metric(metric: schemas.MetricCreate, db: Session = Depends(get_db)):
     db.add(m)
     db.commit()
 
-
-    alerts.evaluate_service(db, service)
 
     return {"status": "ok", "metric": metric}
 

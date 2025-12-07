@@ -13,8 +13,7 @@ class MetricRead(BaseModel):
     unit: str
     timestamp: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class ServiceRead(BaseModel):
     id: int
