@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fundo global com degradê vertical */
+html, body {
+  @apply min-h-screen text-white;
+  background: linear-gradient(
+    to bottom,
+    #4b0082,
+    #6a0dad,
+    #8a2be2,
+    #000000
+  );
+  /* Fixa o degradê enquanto rola  */
+  background-attachment: fixed;
+}
+
+/* Reset básico */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}

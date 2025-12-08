@@ -13,7 +13,8 @@ def get_db():
     finally:
         db.close()
 
-# pega últimas métricas do serviço
+
+# pega últimas métricas por serviço (uma por nome)
 def get_latest_metrics(db: Session, service_id: int):
     metrics = (
         db.query(models.Metric)
@@ -24,23 +25,14 @@ def get_latest_metrics(db: Session, service_id: int):
 
     latest = {}
     for m in metrics:
+        # só pega a métrica mais recente de cada tipo
         if m.metric_name not in latest:
             latest[m.metric_name] = m.value
 
     return latest
 
-# Último alerta do serviço
-def get_last_alert(db: Session, service_id: int):
-    return (
-        db.query(models.Alert)
-        .filter(models.Alert.service_id == service_id)
-        .order_by(models.Alert.created_at.desc())
-        .first()
-    )
 
-
-# Regras de alerta por serviço
-# db
+# status do banco
 def evaluate_db_status(metrics):
     cpu = metrics.get("cpu_usage", 0)
     mem = metrics.get("memory_mb", 0)
@@ -50,7 +42,7 @@ def evaluate_db_status(metrics):
     conn = metrics.get("open_connections", 0)
     avail = metrics.get("availability", 1)
 
-    # segurança extra
+    # segurança
     auth_fail = metrics.get("auth_failures", 0)
     vuln = metrics.get("known_vulnerability", 0)
     config_change = metrics.get("config_change", 0)
@@ -65,25 +57,22 @@ def evaluate_db_status(metrics):
 
     # amarelo
     if (
-        0.01 <= roll <= 0.03 or
-        70 < cpu <= 90 or
-        2500 < mem <= 3500 or
-        10 < disk <= 20 or
-        5 < slow <= 10 or
-        150 < conn <= 250 or
+        0.01 <= roll <= 0.03 or 70 < cpu <= 90 or
+        2500 < mem <= 3500 or 10 < disk <= 20 or
+        5 < slow <= 10 or 150 < conn <= 250 or
         auth_fail > 0
     ):
         return "yellow", "Banco apresenta degradação moderada."
 
     return "green", None
 
-# web server
+
+# status web server
 def evaluate_web_status(metrics):
     latency = metrics.get("latency_ms", 0)
     error_rate = metrics.get("error_rate", 0)
     availability = metrics.get("availability", 1)
 
-    # segurança
     anomaly = metrics.get("traffic_anomaly", 0)
     auth_fail = metrics.get("auth_failures", 0)
     vuln = metrics.get("known_vulnerability", 0)
@@ -95,19 +84,18 @@ def evaluate_web_status(metrics):
     if latency > 2000 or error_rate > 0.10:
         return "red", "Web crítico: latência extremamente alta ou muitos erros."
     if anomaly == 1 or vuln == 1 or config_change == 1:
-        return "red", "Ataque ou risco detectado: tráfego anômalo, vulnerabilidade ou mudança suspeita."
+        return "red", "Alerta de segurança: tráfego anômalo, vulnerabilidade ou mudança suspeita."
 
     # amarelo
     if latency > 1000 or error_rate > 0.02:
-        return "yellow", "Web degradado: latência alta ou taxa de erro acima do normal."
+        return "yellow", "Web degradado: latência alta ou taxa de erro elevada."
     if auth_fail > 5:
         return "yellow", "Falhas de autenticação acima do esperado."
 
     return "green", None
 
 
-
-#dns
+# status dns
 def evaluate_dns_status(metrics):
     latency = metrics.get("latency_ms", 0)
     failures = metrics.get("failures", 0)
@@ -122,11 +110,11 @@ def evaluate_dns_status(metrics):
 
     # amarelo
     if latency > 80 or failures > 0.01:
-        return "yellow", "DNS degradado: lentidão ou falhas acima do normal."
+        return "yellow", "DNS degradado: lentidão ou taxa de falhas acima do normal."
 
     return "green", None
 
-# smtp
+# status do smtp
 def evaluate_smtp_status(metrics):
     queue = metrics.get("queue_length", 0)
     throughput = metrics.get("throughput", 1)
@@ -137,10 +125,7 @@ def evaluate_smtp_status(metrics):
     config_change = metrics.get("config_change", 0)
 
     # vermelho
-    if (
-        errors > 5 or queue > 30 or throughput < 1 or
-        vuln == 1 or config_change == 1
-    ):
+    if errors > 5 or queue > 30 or throughput < 1 or vuln == 1 or config_change == 1:
         return "red", "SMTP crítico: fila alta, erros ou alerta de segurança."
 
     # amarelo
@@ -150,7 +135,8 @@ def evaluate_smtp_status(metrics):
     return "green", None
 
 
-#endpoint principal/status/{service}
+
+# endpoint status/{service}
 @router.get("/{service_key}")
 def service_status(service_key: str, db: Session = Depends(get_db)):
     service = db.query(models.Service).filter(models.Service.key == service_key).first()
@@ -160,7 +146,7 @@ def service_status(service_key: str, db: Session = Depends(get_db)):
 
     metrics = get_latest_metrics(db, service.id)
 
-    # Seleciona avaliação correta
+    # decidir avaliador
     if service_key == "db":
         status, msg = evaluate_db_status(metrics)
     elif service_key == "web":
@@ -172,14 +158,13 @@ def service_status(service_key: str, db: Session = Depends(get_db)):
     else:
         status, msg = "green", None
 
-    # Preparar alerta
+    # prepara alerta para resposta
     alert = (
-        {"level": 3 if status == "red" else 2 if status == "yellow" else 1,
-         "message": msg}
+        {"level": 3 if status == "red" else 2 if status == "yellow" else 1, "message": msg}
         if msg else None
     )
 
-    # Envio automático de alerta crítico
+    # envia e-mail apenas em casos críticos
     if status == "red" and msg:
         send_alert_email(service.name, msg, status)
 
@@ -199,16 +184,21 @@ def dashboard_view(db: Session = Depends(get_db)):
     for s in services:
         metrics = get_latest_metrics(db, s.id)
 
+        # avalia status + mensagem
         if s.key == "db":
-            status, _ = evaluate_db_status(metrics)
+            status, msg = evaluate_db_status(metrics)
         elif s.key == "web":
-            status, _ = evaluate_web_status(metrics)
+            status, msg = evaluate_web_status(metrics)
         elif s.key == "dns":
-            status, _ = evaluate_dns_status(metrics)
+            status, msg = evaluate_dns_status(metrics)
         elif s.key == "smtp":
-            status, _ = evaluate_smtp_status(metrics)
+            status, msg = evaluate_smtp_status(metrics)
         else:
-            status = "green"
+            status, msg = "green", None
+
+        # envia email automaticamente
+        if status == "red" and msg:
+            send_alert_email(s.name, msg, status)
 
         result.append({
             "key": s.key,

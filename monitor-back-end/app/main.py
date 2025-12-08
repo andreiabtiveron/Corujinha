@@ -2,27 +2,28 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine, SessionLocal
 from . import models
-from .routers import metrics, services, alerts, status
+from .routers import metrics, services, alerts, status, history
 
+# Criação das tabelas no banco
 Base.metadata.create_all(bind=engine)
 
-# Criação da api
+# Criação da API
 app = FastAPI(
     title="DevOps Monitor API",
     version="1.0.0",
     description="API para monitoramento de serviços da disciplina de Redes."
 )
 
-# CORS 
+# CORS (permite acesso total do frontend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       
+    allow_origins=["*"],        
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-#seed do banco
+# Seed inicial do banco (insere os serviços)
 def seed_services():
     db = SessionLocal()
     try:
@@ -38,13 +39,15 @@ def seed_services():
     finally:
         db.close()
 
+
 @app.on_event("startup")
 def startup_event():
     seed_services()
 
 
-# Registro dos Routers
+# Registro dos routers
 app.include_router(metrics.router)
 app.include_router(services.router)
 app.include_router(alerts.router)
 app.include_router(status.router)
+app.include_router(history.router)   
