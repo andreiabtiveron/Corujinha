@@ -4,152 +4,113 @@ import random
 
 API_BASE = "http://127.0.0.1:8000"
 
-db_size_gb = 10.0
+# valores-base mais realistas
+def jitter(base, spread):
+    return base + random.uniform(-spread, spread)
 
-
-def send_metric(service_key: str, metric_name: str, value: float, unit: str):
-    payload = {
-        "service_key": service_key,
-        "metric_name": metric_name,
-        "value": value,
-        "unit": unit,
-    }
-
+def send(service, metric, value, unit):
     try:
-        requests.post(f"{API_BASE}/metrics/ingest", json=payload, timeout=5)
-        print(f"[OK] {service_key} → {metric_name} = {value} {unit}")
+        r = requests.post(
+            f"{API_BASE}/metrics/ingest",
+            json={
+                "service_key": service,
+                "metric_name": metric,
+                "value": value,
+                "unit": unit,
+            },
+            timeout=3
+        )
+        print(f"[OK] {service} → {metric} = {value} {unit}")
     except Exception as e:
-        print(f"[ERRO] Falha ao enviar métrica: {e}")
+        print("[ERRO]", e)
 
 
-#security metrics por serviço
-def security_web():
+# ==========================================================
+# WEB SERVER — agora com latências mais moderadas
+# ==========================================================
+def web_metrics():
     return {
+        "latency_ms": jitter(400, 250),             # antes 2000+ → agora ~200–650ms
+        "availability": 1,
+        "rps": jitter(80, 20),
+        "error_rate": max(0, jitter(0.01, 0.015)),  # 0% – 3%
         "traffic_anomaly": random.choice([0, 0, 0, 1]),
-        "auth_failures": random.randint(0, 20),
-        "config_change": random.choice([0, 0, 1]),
+        "auth_failures": random.randint(0, 4),      # antes 15 → agora 0–4
+        "config_change": random.choice([0, 0, 0, 1]),
         "known_vulnerability": random.choice([0, 0, 0, 1]),
     }
 
 
-def security_db():
+# ==========================================================
+# DATABASE — menos agressivo para não ficar sempre RED
+# ==========================================================
+def db_metrics():
     return {
-        "auth_failures": random.randint(0, 10),
-        "config_change": random.choice([0, 1]),
-        "known_vulnerability": random.choice([0, 0, 1]),
-        "slow_query_spike": random.randint(0, 15),
+        "availability": 1,
+        "qps": jitter(120, 60),
+        "slow_queries": random.randint(0, 8),            # antes 14 → agora 0–8
+        "cpu_usage": jitter(40, 20),                     # 20–60%
+        "memory_mb": jitter(2200, 500),                  # 1700–2700
+        "open_connections": jitter(120, 80),             # 40–200
+        "rollback_rate": max(0, jitter(0.02, 0.015)),     # ~0.01–0.035
+        "disk_latency_ms": jitter(8, 4),                 # ~4–12ms
+        "db_size_gb": jitter(10.5, 0.3),
+        "auth_failures": random.randint(0, 3),
+        "config_change": random.choice([0, 0, 0, 1]),
+        "known_vulnerability": random.choice([0, 0, 0, 1]),
+        "slow_query_spike": random.randint(0, 1),
     }
 
 
-def security_dns():
+# ==========================================================
+# DNS — latências mais baixas para evitar RED constante
+# ==========================================================
+def dns_metrics():
     return {
-        "traffic_anomaly": random.choice([0, 0, 1]),
-        "config_change": random.choice([0, 1]),
-        "known_vulnerability": random.choice([0, 0, 1]),
+        "latency_ms": jitter(60, 25),                 # antes 155 → agora 35–85ms
+        "failures": random.choice([0, 0, 0, 1]),
+        "qps": jitter(300, 100),
+        "traffic_anomaly": random.choice([0, 0, 0, 1]),
+        "config_change": random.choice([0, 0, 0, 1]),
+        "known_vulnerability": random.choice([0, 0, 0, 1]),
     }
 
 
-def security_smtp():
+# ==========================================================
+# SMTP — fila muito mais leve
+# ==========================================================
+def smtp_metrics():
     return {
-        "auth_failures": random.randint(0, 8),
-        "queue_spike": random.randint(0, 20),
-        "known_vulnerability": random.choice([0, 0, 1]),
-        "config_change": random.choice([0, 1]),
-
+        "queue_length": random.randint(0, 18),       # antes 36 → agora 0–18
+        "throughput": jitter(60, 20),
+        "errors": random.choice([0, 0, 1, 1, 2]),    # raramente passa de 2
+        "auth_failures": random.randint(0, 3),
+        "queue_spike": random.randint(0, 1),
+        "known_vulnerability": random.choice([0, 0, 0, 1]),
+        "config_change": random.choice([0, 0, 0, 1]),
     }
 
-#coletores de metricas normais
-def collect_web():
-    # Latência real
-    start = time.time()
-    try:
-        req = requests.get("https://google.com", timeout=3)
-        latency = (time.time() - start) * 1000
-        availability = 1 if req.status_code == 200 else 0
-    except Exception:
-        latency = 2000
-        availability = 0
 
-    send_metric("web", "latency_ms", latency, "ms")
-    send_metric("web", "availability", availability, "bool")
-    send_metric("web", "rps", random.uniform(10, 80), "req/s")
-    send_metric("web", "error_rate", random.choice([0.0, 0.01, 0.02, 0.1]), "ratio")
-
-    # segurança
-    sec = security_web()
-    for name, value in sec.items():
-        send_metric("web", name, float(value), "")
+SERVICES = {
+    "web": web_metrics,
+    "db": db_metrics,
+    "dns": dns_metrics,
+    "smtp": smtp_metrics,
+}
 
 
-def collect_db():
-    global db_size_gb
-
-    availability = random.choice([1, 1, 1, 1, 0])
-    qps = random.uniform(5, 300)
-    slow_queries = random.randint(0, 15)
-    cpu = random.uniform(5, 95)
-    mem = random.uniform(200, 4000)
-    open_connections = random.randint(10, 300)
-    rollback_rate = random.choice([0.0, 0.0, 0.01, 0.02, 0.05])
-    disk_latency_ms = random.uniform(1, 25)
-    db_size_gb += random.uniform(0.01, 0.1)
-
-    send_metric("db", "availability", availability, "bool")
-    send_metric("db", "qps", qps, "queries/s")
-    send_metric("db", "slow_queries", slow_queries, "count")
-    send_metric("db", "cpu_usage", cpu, "%")
-    send_metric("db", "memory_mb", mem, "MB")
-    send_metric("db", "open_connections", open_connections, "connections")
-    send_metric("db", "rollback_rate", rollback_rate, "ratio")
-    send_metric("db", "disk_latency_ms", disk_latency_ms, "ms")
-    send_metric("db", "db_size_gb", db_size_gb, "GB")
-
-    # segurança
-    sec = security_db()
-    for name, value in sec.items():
-        send_metric("db", name, float(value), "")
-
-
-def collect_dns():
-    dns_latency = random.uniform(10, 200)
-    failures = random.choice([0, 0, 1])
-    qps = random.uniform(100, 800)
-
-    send_metric("dns", "latency_ms", dns_latency, "ms")
-    send_metric("dns", "failures", failures, "count")
-    send_metric("dns", "qps", qps, "queries/s")
-
-    # segurança
-    sec = security_dns()
-    for name, value in sec.items():
-        send_metric("dns", name, float(value), "")
-
-
-def collect_smtp():
-    queue = random.randint(0, 50)
-    throughput = random.uniform(5, 200)
-    errors = random.choice([0, 0, 1, 2])
-
-    send_metric("smtp", "queue_length", queue, "emails")
-    send_metric("smtp", "throughput", throughput, "emails/min")
-    send_metric("smtp", "errors", errors, "count")
-
-    # segurança
-    sec = security_smtp()
-    for name, value in sec.items():
-        send_metric("smtp", name, float(value), "")
-
-
-def main():
-    print("Iniciando coletor…")
+# ==========================================================
+# LOOP PRINCIPAL
+# ==========================================================
+def loop():
     while True:
-        collect_web()
-        collect_db()
-        collect_dns()
-        collect_smtp()
+        for service, generator in SERVICES.items():
+            metrics = generator()
+            for name, value in metrics.items():
+                send(service, name, float(value), "")
         print("---- ciclo completo ----\n")
-        time.sleep(30)
+        time.sleep(4)  # ciclo mais rápido sem sobrecarregar o servidor
 
 
 if __name__ == "__main__":
-    main()
+    loop()

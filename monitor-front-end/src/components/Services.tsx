@@ -5,7 +5,7 @@ export default function Services() {
   const [services, setServices] = useState([]);
 
   useEffect(() => {
-    fetch("http://localhost:8000/status/dashboard/all")
+    fetch("http://127.0.0.1:8000/status/dashboard/all")
       .then((r) => r.json())
       .then((d) => setServices(d));
   }, []);

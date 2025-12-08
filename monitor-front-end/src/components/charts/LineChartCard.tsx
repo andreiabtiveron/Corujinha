@@ -11,30 +11,28 @@ import {
 ChartJS.register(LineElement, CategoryScale, LinearScale, PointElement);
 
 export default function LineChartCard({ service }: { service: string }) {
-  const [labels, setLabels] = useState<string[]>([]);
-  const [values, setValues] = useState<number[]>([]);
+  const [metricValues, setMetricValues] = useState<number[]>([]);
+  const [metricLabels, setMetricLabels] = useState<string[]>([]);
 
   useEffect(() => {
     async function load() {
-      const res = await fetch(`http://localhost:8000/metrics/latest/${service}`);
+      const res = await fetch(`http://localhost:8000/status/service/${service}`);
       const data = await res.json();
 
-      // Extrair SOMENTE UMA métrica (ex: latency_ms)
-      const metricName = data[0]?.metric_name ?? "";
-      const filtered = data.filter((m: any) => m.metric_name === metricName);
+      if (!data.metrics) return;
 
-      setLabels(filtered.map((m: any) => m.timestamp.slice(11, 19)));
-      setValues(filtered.map((m: any) => m.value));
+      setMetricLabels(Object.keys(data.metrics));
+      setMetricValues(Object.values(data.metrics).map((v: any) => Number(v)));
     }
     load();
   }, [service]);
 
   const chartData = {
-    labels,
+    labels: metricLabels,
     datasets: [
       {
-        label: service.toUpperCase(),
-        data: values,
+        label: `Métricas — ${service}`,
+        data: metricValues,
         borderColor: "#e879f9",
         backgroundColor: "rgba(232,121,249,0.25)",
         borderWidth: 2,
