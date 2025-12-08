@@ -1,44 +1,44 @@
 import { useEffect, useState } from "react";
 
-interface ServiceStatus {
-  key: string;
-  name: string;
-  status: string; // green | yellow | red
-}
-
 export default function Dashboard() {
-  const [data, setData] = useState<ServiceStatus[]>([]);
+  const [services, setServices] = useState([]);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/status/dashboard/all")
-      .then((res) => res.json())
-      .then((json) => setData(json));
+    fetch("http://localhost:8000/status/dashboard/all")
+      .then((r) => r.json())
+      .then((d) => setServices(d));
   }, []);
 
-  const colors = {
-    green: "bg-green-600 shadow-[0_0_20px_rgba(0,255,0,0.4)]",
-    yellow: "bg-yellow-500 shadow-[0_0_20px_rgba(255,255,0,0.4)]",
-    red: "bg-red-600 shadow-[0_0_20px_rgba(255,0,0,0.4)]",
-  };
-
   return (
-    <section id="dashboard" className="w-full py-24 bg-black relative">
-      <h2 className="text-4xl font-bold text-center mb-12">Dashboard Geral</h2>
+    <section id="dashboard" className="py-24 text-center">
+      <h2 className="text-4xl font-bold mb-6 drop-shadow-xl">
+        Visão Consolidada
+      </h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 px-10">
-        {data.map((s) => (
+      <p className="opacity-80 text-lg max-w-2xl mx-auto mb-10">
+        Veja métricas, gráficos e alertas agrupados de forma clara e elegante.
+      </p>
+
+      {/* GRID DE VISÃO RESUMIDA */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 px-10">
+        {services.map((s: any) => (
           <div
             key={s.key}
-            className={`
-              rounded-2xl p-6 text-center border border-purple-700
-              hover:scale-105 transition-all duration-300
-              bg-opacity-20 backdrop-blur-md cursor-pointer
-              ${colors[s.status]}
-            `}
+            className="p-6 bg-black/40 backdrop-blur-lg border border-purple-600 rounded-xl shadow-xl"
           >
-            <h3 className="text-xl font-semibold mb-2">{s.name}</h3>
-            <p className="text-sm opacity-90">Status:</p>
-            <span className="text-lg font-bold uppercase">{s.status}</span>
+            <h3 className="text-xl font-bold mb-2">{s.name}</h3>
+
+            <p
+              className={
+                s.status === "green"
+                  ? "text-green-400"
+                  : s.status === "yellow"
+                  ? "text-yellow-300"
+                  : "text-red-400"
+              }
+            >
+              {s.status.toUpperCase()}
+            </p>
           </div>
         ))}
       </div>

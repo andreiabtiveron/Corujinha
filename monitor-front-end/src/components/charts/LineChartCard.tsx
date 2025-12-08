@@ -11,59 +11,40 @@ import {
 ChartJS.register(LineElement, CategoryScale, LinearScale, PointElement);
 
 export default function LineChartCard({ service }: { service: string }) {
-  const [values, setValues] = useState<number[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [values, setValues] = useState<number[]>([]);
 
   useEffect(() => {
-    const fetchMetrics = async () => {
-      try {
-        const res = await fetch(`http://localhost:8000/metrics/latest/${service}`);
-        const data = await res.json();
+    async function load() {
+      const res = await fetch(`http://localhost:8000/metrics/latest/${service}`);
+      const data = await res.json();
 
-        // data é uma LISTA → converter para formato {nome: valor}
-        const metricMap: Record<string, number> = {};
-        data.forEach((m: any) => {
-          metricMap[m.metric_name] = m.value;
-        });
+      // Extrair SOMENTE UMA métrica (ex: latency_ms)
+      const metricName = data[0]?.metric_name ?? "";
+      const filtered = data.filter((m: any) => m.metric_name === metricName);
 
-        setLabels(Object.keys(metricMap));
-        setValues(Object.values(metricMap));
-      } catch (e) {
-        console.error("Erro ao carregar métricas", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMetrics();
+      setLabels(filtered.map((m: any) => m.timestamp.slice(11, 19)));
+      setValues(filtered.map((m: any) => m.value));
+    }
+    load();
   }, [service]);
-
-  if (loading) {
-    return (
-      <div className="bg-black p-3 rounded-xl border border-purple-800 text-center text-purple-300">
-        Carregando...
-      </div>
-    );
-  }
 
   const chartData = {
     labels,
     datasets: [
       {
-        label: `Métricas — ${service}`,
+        label: service.toUpperCase(),
         data: values,
         borderColor: "#e879f9",
-        backgroundColor: "rgba(232, 121, 249, 0.3)",
+        backgroundColor: "rgba(232,121,249,0.25)",
         borderWidth: 2,
         tension: 0.3,
-        pointRadius: 2,
       },
     ],
   };
 
   return (
-    <div className="bg-black p-3 rounded-xl border border-purple-800">
+    <div className="bg-black/50 p-4 rounded-xl border border-fuchsia-700">
       <Line data={chartData} />
     </div>
   );

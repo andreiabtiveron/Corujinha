@@ -1,23 +1,32 @@
+/* Reset e base cyberpunk */
 #root {
   max-width: 1280px;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+  position: relative; /* Para efeitos de layer */
 }
 
+/* Logo com efeito neon cyberpunk */
 .logo {
   height: 6em;
   padding: 1.5em;
   will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+  transition: filter 300ms ease-in-out, box-shadow 300ms ease-in-out;
+  filter: drop-shadow(0 0 0.5em #646cffaa); /* Glow inicial sutil */
 }
 
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa) brightness(1.2);
+  box-shadow: 0 0 20px #646cffaa; /* Glow extra no hover */
+}
+
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa) brightness(1.2);
+  box-shadow: 0 0 20px #61dafbaa;
+}
+
+/* Animação de rotação para logos, respeitando preferências de movimento */
 @keyframes logo-spin {
   from {
     transform: rotate(0deg);
@@ -33,10 +42,60 @@
   }
 }
 
+/* Cards com borda neon */
 .card {
   padding: 2em;
+  border: 1px solid #fuchsia-600/30;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5); /* Fundo semi-transparente para imersão */
+  box-shadow: 0 0 10px rgba(255, 0, 150, 0.2); /* Glow fuchsia sutil */
+  transition: box-shadow 300ms ease-in-out;
 }
 
+.card:hover {
+  box-shadow: 0 0 20px rgba(255, 0, 150, 0.5); /* Glow mais intenso no hover */
+}
+
+/* Texto secundário com efeito cyberpunk */
 .read-the-docs {
   color: #888;
+  text-shadow: 0 0 5px #fuchsia-400; /* Glow leve no texto */
+}
+
+/* Efeito de scanline para vibe retro (opcional, adicione a elementos específicos) */
+.scanline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 0, 150, 0.1) 2px,
+    rgba(255, 0, 150, 0.1) 4px
+  );
+  pointer-events: none;
+  animation: scan 2s linear infinite;
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* Responsividade: Ajustes para mobile */
+@media (max-width: 768px) {
+  #root {
+    padding: 1rem;
+  }
+  .logo {
+    height: 4em;
+    padding: 1em;
+  }
+  .card {
+    padding: 1em;
+  }
 }

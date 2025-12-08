@@ -2,23 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fundo global com degradê vertical */
 html, body {
   @apply min-h-screen text-white;
   background: linear-gradient(
     to bottom,
-    #4b0082,
-    #6a0dad,
-    #8a2be2,
+    #3b0066,
+    #5a0099,
+    #7a00cc,
     #000000
   );
-  /* Fixa o degradê enquanto rola  */
   background-attachment: fixed;
+  overflow-x: hidden;
+  position: relative;
 }
 
-/* Reset básico */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,0,150,0.12), transparent 70%);
+  z-index: -2;
+  pointer-events: none;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 12px,
+    rgba(255, 0, 150, 0.06) 12px,
+    rgba(255, 0, 150, 0.06) 24px
+  );
+  animation: scanlines 12s linear infinite;
+  z-index: -1;
+}
+
+@keyframes scanlines {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
