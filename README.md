@@ -1,6 +1,6 @@
-*README — Guia de Instalação e Execução
+#README — Guia de Instalação e Execução
 
-Plataforma de Monitoramento DevOps**
+#Plataforma de Monitoramento DevOps
 
 ## 1. Visão Geral
 
